@@ -1,0 +1,40 @@
+#!/usr/bin/env python
+
+from PIL import Image, ImagePalette
+from sys import argv
+
+colors = [
+    [ 0, 0, 0 ],
+    [ 255, 255, 255 ],
+    [ 255, 0, 0 ],
+    [ 0, 255, 0 ],
+    [ 0, 0, 255 ]
+]
+
+flat_colors = [item for sublist in colors for item in sublist]
+
+palette = ImagePalette.ImagePalette(palette=flat_colors * 32)
+
+with Image.open(argv[1]) as image:
+    rgb_image = Image.new("RGB", image.size, (255, 255, 255))
+    rgb_image.paste(image, mask=image.split()[3]) # remove alpha channel
+
+    image_palette = Image.new('P', image.size)
+    image_palette.putpalette(palette)
+
+    dithered_image = rgb_image.quantize(dither=Image.Dither.FLOYDSTEINBERG, palette=image_palette)
+
+    data = dithered_image.getdata()
+
+    for index, color in enumerate(colors):
+        image = Image.new("1", dithered_image.size)
+
+        monochrome_data = []
+        for color in data:
+            if color == index:
+                monochrome_data.append(1)
+            else:
+                monochrome_data.append(0)
+
+        image.putdata(monochrome_data)
+        image.show()
