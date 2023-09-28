@@ -7,20 +7,30 @@ import numpy as np
 import stl
 from stl import mesh
 
-WIDTH = 92
-HEIGHT = 92
+SIZE = 70 # mm
+RES = 128
+BASE_THICKNESS = 0.5
+THICKNESS = 0.75 # mm
 
-def put_pixel(x, y, z):
+SCALE = SIZE / RES
+
+def put_pixel(x, y, z, thickness):
+    if int(x / 2) % 2 == 0 and int(y / 2) % 2 == 0:
+        return None
+
+    scaled_x = x * SCALE
+    scaled_y = y * SCALE
+
     # Define the 8 vertices of the cube
     vertices = np.array([
-        [x, y, z],
-        [x+1, y, z],
-        [x+1, y+1, z],
-        [x, y+1, z],
-        [x, y, z+1],
-        [x+1, y, z+1],
-        [x+1, y+1, z+1],
-        [x, y+1, z+1]
+        [scaled_x,          scaled_y,           z            ],
+        [scaled_x + SCALE,  scaled_y,           z            ],
+        [scaled_x + SCALE,  scaled_y + SCALE,   z            ],
+        [scaled_x,          scaled_y + SCALE,   z            ],
+        [scaled_x,          scaled_y,           z + thickness],
+        [scaled_x + SCALE,  scaled_y,           z + thickness],
+        [scaled_x + SCALE,  scaled_y + SCALE,   z + thickness],
+        [scaled_x,          scaled_y + SCALE,   z + thickness]
     ])
 
     # Define the 12 triangles composing the cube
@@ -45,43 +55,69 @@ def put_pixel(x, y, z):
         for j in range(3):
             cube.vectors[i][j] = vertices[f[j],:]
 
-    return cube
+    return cube.data
+
+def generate_layer(image, z, thickness, output_filename, select = lambda x, y: True):
+    cubes = []
+    for x in range(image.size[0]):
+        for y in range(image.size[1]):
+            if not select(x, y):
+                continue
+
+            cube = put_pixel(x=x, y=y, z=z, thickness=thickness)
+
+            if cube is not None:
+                cubes.append(cube)
+
+    if len(cubes) > 0:
+        stl_mesh = mesh.Mesh(np.concatenate(cubes), remove_duplicate_polygons=False)
+        stl_mesh.save(output_filename, mode=stl.Mode.ASCII)
 
 colors = {
-    "black": [ 0, 0, 0 ],
     "white": [ 255, 255, 255 ],
-    "red": [ 255, 0, 0 ],
-    "blue": [ 0, 0, 255 ]
+    "black": [ 0, 0, 0 ],
+    "blue": [ 32, 105, 164 ],
 }
-
-print(colors.keys())
 
 flat_colors = [item for sublist in colors.values() for item in sublist]
 
 palette = ImagePalette.ImagePalette(palette=flat_colors * 32)
 
 with Image.open(argv[1]) as image:
-    rgb_image = Image.new("RGB", image.size, (255, 255, 255))
-    rgb_image.paste(image, mask=image.split()[3]) # remove alpha channel
+    if image.mode == "RGBA":
+        rgb_image = Image.new("RGB", image.size, (255, 255, 255))
+        rgb_image.paste(image, mask=image.split()[3]) # remove alpha channel
+    else:
+        rgb_image = image
 
-    resized_image = rgb_image.resize((WIDTH, HEIGHT))
+    resized_image = rgb_image.resize((RES, RES), Image.LANCZOS)
 
     image_palette = Image.new('P', resized_image.size)
     image_palette.putpalette(palette)
 
-    dithered_image = resized_image.quantize(dither=Image.Dither.FLOYDSTEINBERG, palette=image_palette)
+    dithered_image = resized_image.quantize(dither=Image.Dither.NONE, palette=image_palette)
 
-    data = dithered_image.getdata()
+    data = dithered_image.load()
+
+    # Generate black base layer, black to avoid light reflection
+    generate_layer(
+        image=resized_image,
+        output_filename="base_black.stl",
+        z=0,
+        thickness=BASE_THICKNESS
+    )
+    generate_layer(
+        image=resized_image,
+        output_filename="base_white.stl",
+        z=BASE_THICKNESS,
+        thickness=BASE_THICKNESS
+    )
 
     for index in range(len(colors)):
-        cubes = []
-        for pixel_index, color in enumerate(data):
-            x = pixel_index % WIDTH
-            y = int(pixel_index / WIDTH)
-
-            if color == index:
-                cubes.append(put_pixel(x=x, y=y, z=0).data)
-
-        if len(cubes) > 0:
-            stl_mesh = mesh.Mesh(np.concatenate(cubes), remove_duplicate_polygons=False)
-            stl_mesh.save(f'{list(colors.keys())[index]}.stl', mode=stl.Mode.ASCII)
+        generate_layer(
+            image=resized_image,
+            output_filename=f'{list(colors.keys())[index]}.stl',
+            z=BASE_THICKNESS * 2, # We put the colors over the two base layers
+            thickness=BASE_THICKNESS,
+            select=lambda x, y : data[x, y] == index
+        )
