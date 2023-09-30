@@ -6,22 +6,17 @@ from sys import argv
 import numpy as np
 import stl
 from stl import mesh
-import colorsys
-import pymesh
 
 SIZE = 70 # mm
-# RES = 130
-RES = 4
+RES = 160
 SCALE = SIZE / RES
+DITHER = False
 
-BASE_LAYER_HEIGHT = 0.1
-COHESION_LAYER_HEIGHT = 0.7
-GRADIENT_LAYER_HEIGHT = 0.7
-
-BASE_THICKNESS = 0.5
+COHESION_LAYER_HEIGHT = 1
+COLOR_LAYER_HEIGHT = 0.6
 
 bambu_filaments = {
-    "blue": [ 32, 105, 164 ]
+    "blue": [ 0, 120, 191 ]
 }
 
 def put_pixel(x, y, z, thickness):
@@ -44,16 +39,16 @@ def put_pixel(x, y, z, thickness):
     faces = np.array([
         [0,3,1], # Bottom
         [1,3,2], # Bottom
-        # [0,4,7], # Side
-        # [0,7,3], # Side
         [4,5,6], # Top
         [4,6,7], # Top
-        # [5,1,2],
-        # [5,2,6],
-        # [2,3,6],
-        # [3,7,6],
-        # [0,1,5],
-        # [0,5,4]
+        [0,4,7],
+        [0,7,3],
+        [5,1,2],
+        [5,2,6],
+        [2,3,6],
+        [3,7,6],
+        [0,1,5],
+        [0,5,4]
     ])
 
     pixel = mesh.Mesh(np.zeros(faces.shape[0], dtype=mesh.Mesh.dtype))
@@ -69,45 +64,17 @@ def layer_to_stl(layer, filename):
         stl_mesh = mesh.Mesh(np.concatenate(layer), remove_duplicate_polygons=False)
         stl_mesh.save(filename, mode=stl.Mode.ASCII)
 
-def lighten(color, amount=0.5):
-    hsv = colorsys.rgb_to_hsv(*color)
-    lighten_rgb = colorsys.hsv_to_rgb(hsv[0], 1 - amount * (1 - hsv[1]), hsv[2])
-
-    return [ int(lighten_rgb[0]), int(lighten_rgb[1]), int(lighten_rgb[2]) ]
-
 colors_configuration = {
-    "black": {
-        "rgb": [ 0, 0, 0 ],
-        "gradient": 'black',
-        "layers": 0
-    },
-    "white": {
-        "rgb": [ 255, 255, 255 ],
-        "gradient": 'white',
-        "layers": 0
-    },
-    "lighter_blue":  {
-        "rgb": lighten(bambu_filaments["blue"], 0.5),
-        "gradient": 'white',
-        "layers":  1
-    },
-    "light_blue":  {
-        "rgb": lighten(bambu_filaments["blue"], 0.25),
-        "gradient": 'white',
-        "layers":  2
-    },
-    "blue":  {
-        "rgb": bambu_filaments["blue"],
-        "gradient": 'white',
-        "layers": 3
-    }
+    "black":    [ 0, 0, 0],
+    "white":    [ 255, 255, 255 ],
+    "blue":     [ 0, 120, 191 ]
 }
 
 flat_colors = []
-for color_configuration in colors_configuration.values():
-    flat_colors.append(color_configuration["rgb"][0])
-    flat_colors.append(color_configuration["rgb"][1])
-    flat_colors.append(color_configuration["rgb"][2])
+for rgb in colors_configuration.values():
+    flat_colors.append(rgb[0])
+    flat_colors.append(rgb[1])
+    flat_colors.append(rgb[2])
 
 palette = ImagePalette.ImagePalette(palette=flat_colors * 32) # Why 32?
 
@@ -123,17 +90,19 @@ with Image.open(argv[1]) as image:
     image_palette = Image.new('P', resized_image.size)
     image_palette.putpalette(palette)
 
-    dithered_image = resized_image.quantize(dither=Image.Dither.NONE, palette=image_palette)
+    dithered_image = resized_image.quantize(
+        dither=Image.Dither.FLOYDSTEINBERG if DITHER else Image.Dither.NONE,
+        palette=image_palette
+    )
     dithered_image_data = dithered_image.load()
 
     cohesion_layer = []
-    gradient_layers = {}
     color_layers = {}
 
     for x in range(dithered_image.size[0]):
         for y in range(dithered_image.size[1]):
             # Punch holes, needs more configuration
-            if int(x / 2) % 2 == 0 and int(y / 2) % 2 == 0:
+            if int(x / 1) % 3 == 0 and int(y / 2) % 3 == 0:
                 continue
 
             # Add cohesion layer
@@ -142,27 +111,14 @@ with Image.open(argv[1]) as image:
             )
 
             for index, color in enumerate(colors_configuration.keys()):
-                gradient = colors_configuration[color]["gradient"]
-
                 if dithered_image_data[x, y] != index:
-                    continue
-
-                # Add pixel in gradient layer
-                gradient_layers.setdefault(gradient, [])
-                gradient_layers[gradient].append(
-                    put_pixel(x=x, y=y, z=COHESION_LAYER_HEIGHT, thickness=GRADIENT_LAYER_HEIGHT)
-                )
-
-                layers = colors_configuration[color]["layers"]
-
-                if layers == 0:
                     continue
 
                 pixel = put_pixel(
                     x=x,
                     y=y,
-                    z=COHESION_LAYER_HEIGHT + GRADIENT_LAYER_HEIGHT,
-                    thickness=BASE_LAYER_HEIGHT * layers
+                    z=COHESION_LAYER_HEIGHT,
+                    thickness=COLOR_LAYER_HEIGHT
                 )
 
                 if pixel is not None:
@@ -171,9 +127,6 @@ with Image.open(argv[1]) as image:
 
 
     layer_to_stl(cohesion_layer, 'cohesion.stl')
-
-    for color, layer in gradient_layers.items():
-        layer_to_stl(layer, f'{color}_gradient.stl')
 
     for color, layer in color_layers.items():
         layer_to_stl(layer, f'{color}_color.stl')
