@@ -7,17 +7,24 @@ import numpy as np
 import stl
 from stl import mesh
 
+INPUT_IMAGE_PATH = argv[1]
 SIZE = 70 # mm
-RES = 160
-SCALE = SIZE / RES
-DITHER = False
+HOLE_SIZE = 0.4 # mm
+HOLE_DENSITY = 0.3 # 30% holes
+
+HOLE_COUNT = SIZE * HOLE_DENSITY
 
 COHESION_LAYER_HEIGHT = 1
 COLOR_LAYER_HEIGHT = 0.6
 
-bambu_filaments = {
-    "blue": [ 0, 120, 191 ]
-}
+RESOLUTION = int(SIZE / HOLE_SIZE)
+print(RESOLUTION)
+SCALE = SIZE / RESOLUTION
+
+HOLE_FREQUENCY = int(RESOLUTION / HOLE_COUNT)
+print(HOLE_FREQUENCY)
+DITHER = False
+
 
 def put_pixel(x, y, z, thickness):
     scaled_x = x * SCALE
@@ -78,14 +85,14 @@ for rgb in colors_configuration.values():
 
 palette = ImagePalette.ImagePalette(palette=flat_colors * 32) # Why 32?
 
-with Image.open(argv[1]) as image:
+with Image.open(INPUT_IMAGE_PATH) as image:
     if image.mode == "RGBA":
         rgb_image = Image.new("RGB", image.size, (255, 255, 255))
         rgb_image.paste(image, mask=image.split()[3]) # remove alpha channel
     else:
         rgb_image = image
 
-    resized_image = rgb_image.resize((RES, RES), Image.LANCZOS)
+    resized_image = rgb_image.resize((RESOLUTION, RESOLUTION), Image.LANCZOS)
 
     image_palette = Image.new('P', resized_image.size)
     image_palette.putpalette(palette)
@@ -99,13 +106,13 @@ with Image.open(argv[1]) as image:
     cohesion_layer = []
     color_layers = {}
 
-    for x in range(dithered_image.size[0]):
+    for x in range(dithered_image.size[0]): # TODO: Change that with the required resolution
         for y in range(dithered_image.size[1]):
-            # Punch holes, needs more configuration
-            if int(x / 1) % 3 == 0 and int(y / 2) % 3 == 0:
+            # Skip holes, needs more configuration
+            if int(x / HOLE_SIZE) % HOLE_FREQUENCY == 0 and int(y / HOLE_SIZE) % HOLE_FREQUENCY == 0:
                 continue
 
-            # Add cohesion layer
+            # Add cohesion layer (ie, a tall pixel under each colored pixel to serve as a platform)
             cohesion_layer.append(
                 put_pixel(x=x, y=y, z=0, thickness=COHESION_LAYER_HEIGHT)
             )
@@ -117,16 +124,14 @@ with Image.open(argv[1]) as image:
                 pixel = put_pixel(
                     x=x,
                     y=y,
-                    z=COHESION_LAYER_HEIGHT,
+                    z=COHESION_LAYER_HEIGHT, # On top of the cohesion layer
                     thickness=COLOR_LAYER_HEIGHT
                 )
 
-                if pixel is not None:
-                    color_layers.setdefault(color, [])
-                    color_layers[color].append(pixel)
+                color_layers.setdefault(color, [])
+                color_layers[color].append(pixel)
 
-
-    layer_to_stl(cohesion_layer, 'cohesion.stl')
+    layer_to_stl(cohesion_layer, f'cohesion_{HOLE_SIZE}_{HOLE_FREQUENCY}.stl')
 
     for color, layer in color_layers.items():
-        layer_to_stl(layer, f'{color}_color.stl')
+        layer_to_stl(layer, f'{color}_color_{HOLE_SIZE}_{HOLE_FREQUENCY}.stl')
