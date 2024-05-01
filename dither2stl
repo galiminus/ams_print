@@ -7,24 +7,28 @@ import numpy as np
 import stl
 from stl import mesh
 
-INPUT_IMAGE_PATH = argv[1]
+## Configuration
+
 SIZE = 70 # mm
 HOLE_SIZE = 0.4 # mm
-HOLE_DENSITY = 0.3 # 30% holes
-
-HOLE_COUNT = SIZE * HOLE_DENSITY
+HOLE_DENSITY_PERCENT = 100 # %
 
 COHESION_LAYER_HEIGHT = 1
 COLOR_LAYER_HEIGHT = 0.6
 
+## End configuration
+
+INPUT_IMAGE_PATH = argv[1]
+
+HOLE_DENSITY = HOLE_DENSITY_PERCENT * 0.4 / 100
+
 RESOLUTION = int(SIZE / HOLE_SIZE)
-print(RESOLUTION)
+HOLE_COUNT = int(RESOLUTION * HOLE_DENSITY)
 SCALE = SIZE / RESOLUTION
 
-HOLE_FREQUENCY = int(RESOLUTION / HOLE_COUNT)
-print(HOLE_FREQUENCY)
+HOLE_FREQUENCY = int((RESOLUTION - HOLE_SIZE * SCALE * HOLE_COUNT) / HOLE_COUNT)
+HOLE_OFFSET = int(HOLE_FREQUENCY / 2)
 DITHER = False
-
 
 def put_pixel(x, y, z, thickness):
     scaled_x = x * SCALE
@@ -106,10 +110,10 @@ with Image.open(INPUT_IMAGE_PATH) as image:
     cohesion_layer = []
     color_layers = {}
 
-    for x in range(dithered_image.size[0]): # TODO: Change that with the required resolution
+    for x in range(dithered_image.size[0]):
         for y in range(dithered_image.size[1]):
-            # Skip holes, needs more configuration
-            if int(x / HOLE_SIZE) % HOLE_FREQUENCY == 0 and int(y / HOLE_SIZE) % HOLE_FREQUENCY == 0:
+            # Skip holes
+            if (x + HOLE_OFFSET) % HOLE_FREQUENCY == 0 and (y + HOLE_OFFSET) % HOLE_FREQUENCY == 0:
                 continue
 
             # Add cohesion layer (ie, a tall pixel under each colored pixel to serve as a platform)
