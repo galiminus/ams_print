@@ -1,4 +1,1 @@
 Pillow==9.4.0
-numpy-stl==3.0.1
-pymesh==1.0.2
-wxPython==4.2.1
