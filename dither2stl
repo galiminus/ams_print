@@ -3,9 +3,10 @@
 from PIL import Image, ImagePalette
 from sys import argv
 
-import numpy as np
-import stl
-from stl import mesh
+from xml.dom.minidom import getDOMImplementation
+
+from zipfile import ZipFile
+import uuid
 
 ## Configuration
 
@@ -35,7 +36,7 @@ def put_pixel(x, y, z, thickness):
     scaled_y = y * SCALE
 
     # Define the 8 vertices of the pixel
-    vertices = np.array([
+    vertices = [
         [scaled_x,          scaled_y,           z            ],
         [scaled_x + SCALE,  scaled_y,           z            ],
         [scaled_x + SCALE,  scaled_y + SCALE,   z            ],
@@ -44,10 +45,10 @@ def put_pixel(x, y, z, thickness):
         [scaled_x + SCALE,  scaled_y,           z + thickness],
         [scaled_x + SCALE,  scaled_y + SCALE,   z + thickness],
         [scaled_x,          scaled_y + SCALE,   z + thickness]
-    ])
+    ]
 
     # Define the 12 triangles composing the pixel
-    faces = np.array([
+    faces = [
         [0,3,1], # Bottom
         [1,3,2], # Bottom
         [4,5,6], # Top
@@ -60,20 +61,74 @@ def put_pixel(x, y, z, thickness):
         [3,7,6],
         [0,1,5],
         [0,5,4]
-    ])
+    ]
 
-    pixel = mesh.Mesh(np.zeros(faces.shape[0], dtype=mesh.Mesh.dtype))
+    return (vertices, faces)
 
-    for i, f in enumerate(faces):
-        for j in range(3):
-            pixel.vectors[i][j] = vertices[f[j],:]
+def add_layer(model_document, layer):
+    object_id = str(uuid.uuid4())
 
-    return pixel.data
+    # Make sure the required nodes are present
+    try:
+        resources_element = model_document.getElementsByTagName("resources")[0]
+    except IndexError:
+        resources_element = model_document.createElement("resources")
+        model_document.documentElement.appendChild(resources_element)
 
-def layer_to_stl(layer, filename):
-    if len(layer) > 0:
-        stl_mesh = mesh.Mesh(np.concatenate(layer), remove_duplicate_polygons=False)
-        stl_mesh.save(filename, mode=stl.Mode.ASCII)
+    try:
+        build_element = model_document.getElementsByTagName("build")[0]
+    except IndexError:
+        build_element = model_document.createElement("build")
+        model_document.documentElement.appendChild(build_element)
+
+    object_element = model_document.createElement("object")
+    object_element.setAttribute("id", object_id)
+    object_element.setAttribute("type", "model")
+    resources_element.appendChild(object_element)
+
+    mesh_element = model_document.createElement("mesh")
+    object_element.appendChild(mesh_element)
+
+    vertices_element = model_document.createElement("vertices")
+    mesh_element.appendChild(vertices_element)
+
+    triangles_element = model_document.createElement("triangles")
+    mesh_element.appendChild(triangles_element)
+
+    item_element = model_document.createElement("item")
+    item_element.setAttribute("objectid", object_id)
+    item_element.setAttribute("transform", "1 0 0 0 1 0 0 0 1 90 90 0")
+    item_element.setAttribute("printable", "1")
+    build_element.appendChild(item_element)
+
+    vertice_index = 0
+    for pixel in layer:
+        vertices, triangles = pixel
+
+        for vertex in vertices:
+            vertice = model_document.createElement("vertex")
+            vertice.setAttribute("x", str(vertex[0]))
+            vertice.setAttribute("y", str(vertex[1]))
+            vertice.setAttribute("z", str(vertex[2]))
+            vertices_element.appendChild(vertice)
+
+        for triangle in triangles:
+            triangle_element = model_document.createElement("triangle")
+            triangle_element.setAttribute("v1", str(vertice_index + triangle[0]))
+            triangle_element.setAttribute("v2", str(vertice_index + triangle[1]))
+            triangle_element.setAttribute("v3", str(vertice_index + triangle[2]))
+            triangles_element.appendChild(triangle_element)
+
+        vertice_index += 8
+
+def create_model_document():
+    model_document = getDOMImplementation().createDocument(None, "model", None)
+
+    model_document.documentElement.setAttribute("unit", "millimeter")
+    model_document.documentElement.setAttribute("xml:lang", "en-US")
+    model_document.documentElement.setAttribute("xmlns", "http://schemas.microsoft.com/3dmanufacturing/core/2015/02")
+
+    return model_document
 
 colors_configuration = {
     "black":    [ 0, 0, 0],
@@ -101,17 +156,19 @@ with Image.open(INPUT_IMAGE_PATH) as image:
     image_palette = Image.new('P', resized_image.size)
     image_palette.putpalette(palette)
 
-    dithered_image = resized_image.quantize(
+    quantized_image = resized_image.quantize(
         dither=Image.Dither.FLOYDSTEINBERG if DITHER else Image.Dither.NONE,
         palette=image_palette
     )
-    dithered_image_data = dithered_image.load()
+    quantized_image_data = quantized_image.load()
 
     cohesion_layer = []
     color_layers = {}
 
-    for x in range(dithered_image.size[0]):
-        for y in range(dithered_image.size[1]):
+    model_document = create_model_document()
+
+    for x in range(quantized_image.size[0]):
+        for y in range(quantized_image.size[1]):
             # Skip holes
             if (x + HOLE_OFFSET) % HOLE_FREQUENCY == 0 and (y + HOLE_OFFSET) % HOLE_FREQUENCY == 0:
                 continue
@@ -122,7 +179,7 @@ with Image.open(INPUT_IMAGE_PATH) as image:
             )
 
             for index, color in enumerate(colors_configuration.keys()):
-                if dithered_image_data[x, y] != index:
+                if quantized_image_data[x, y] != index:
                     continue
 
                 pixel = put_pixel(
@@ -135,7 +192,21 @@ with Image.open(INPUT_IMAGE_PATH) as image:
                 color_layers.setdefault(color, [])
                 color_layers[color].append(pixel)
 
-    layer_to_stl(cohesion_layer, f'cohesion_{HOLE_SIZE}_{HOLE_FREQUENCY}.stl')
+    add_layer(model_document, cohesion_layer)
 
     for color, layer in color_layers.items():
-        layer_to_stl(layer, f'{color}_color_{HOLE_SIZE}_{HOLE_FREQUENCY}.stl')
+        add_layer(model_document, layer)
+
+    with ZipFile('output.3mf', 'w') as output_zip:
+        output_zip.writestr('[Content_Types].xml', '''<?xml version="1.0" encoding="UTF-8"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+    <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+    <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
+</Types>''')
+
+        output_zip.writestr('_rels/.rels', '''<?xml version="1.0" encoding="UTF-8"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+    <Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>''')
+
+        output_zip.writestr('3D/3dmodel.model', model_document.toprettyxml())
