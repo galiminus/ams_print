@@ -7,6 +7,7 @@ from xml.dom.minidom import getDOMImplementation
 
 from zipfile import ZipFile
 import uuid
+from datetime import datetime
 
 ## Configuration
 
@@ -31,41 +32,62 @@ HOLE_FREQUENCY = round((RESOLUTION - HOLE_SIZE * SCALE * HOLE_COUNT) / HOLE_COUN
 HOLE_OFFSET = int(HOLE_FREQUENCY / 2)
 DITHER = False
 
-def put_pixel(x, y, z, thickness):
-    scaled_x = x * SCALE
-    scaled_y = y * SCALE
+class Layer:
+    def __init__(self, z, thickness, scale):
+        self.z = z
+        self.thickness = thickness
+        self.scale = scale
+        self.faces = []
+        self.faces_index = {}
 
-    # Define the 8 vertices of the pixel
-    vertices = [
-        [scaled_x,          scaled_y,           z            ],
-        [scaled_x + SCALE,  scaled_y,           z            ],
-        [scaled_x + SCALE,  scaled_y + SCALE,   z            ],
-        [scaled_x,          scaled_y + SCALE,   z            ],
-        [scaled_x,          scaled_y,           z + thickness],
-        [scaled_x + SCALE,  scaled_y,           z + thickness],
-        [scaled_x + SCALE,  scaled_y + SCALE,   z + thickness],
-        [scaled_x,          scaled_y + SCALE,   z + thickness]
-    ]
+    def put_pixel(self, x, y):
+        scaled_x = x * self.scale
+        scaled_y = y * self.scale
 
-    # Define the 12 triangles composing the pixel
-    faces = [
-        [0,3,1], # Bottom
-        [1,3,2], # Bottom
-        [4,5,6], # Top
-        [4,6,7], # Top
-        [0,4,7],
-        [0,7,3],
-        [5,1,2],
-        [5,2,6],
-        [2,3,6],
-        [3,7,6],
-        [0,1,5],
-        [0,5,4]
-    ]
+        # Define the 8 vertices of the pixel
+        vertices = [
+            [scaled_x,               scaled_y,                self.z                  ],
+            [scaled_x + self.scale,  scaled_y,                self.z                  ],
+            [scaled_x + self.scale,  scaled_y + self.scale,   self.z                  ],
+            [scaled_x,               scaled_y + self.scale,   self.z                  ],
+            [scaled_x,               scaled_y,                self.z + self.thickness ],
+            [scaled_x + self.scale,  scaled_y,                self.z + self.thickness ],
+            [scaled_x + self.scale,  scaled_y + self.scale,   self.z + self.thickness ],
+            [scaled_x,               scaled_y + self.scale,   self.z + self.thickness ]
+        ]
 
-    return (vertices, faces)
+        # Define the 12 triangles composing the pixel
+        faces = [
+            [0, 3, 1], # Bottom
+            [1, 3, 2], # Bottom
+            [4, 5, 6], # Top
+            [4, 6, 7], # Top
+            # [0, 4, 7],
+            # [0, 7, 3],
+            # [5, 1, 2],
+            # [5, 2, 6],
+            # [2, 3, 6],
+            # [3, 7, 6],
+            # [0, 1, 5],
+            # [0, 5, 4]
+        ]
 
-def add_layer(model_document, layer):
+        for face in faces:
+            face_vertices = [vertices[vertex_index] for vertex_index in face]
+            face_vertices.sort()
+
+            # face_vertices_key = 'x'.join([ '-'.join(map(str, face_vertices)) for face_vertices in face_vertices ])
+
+            # # Remove all faces in double
+            # if face_vertices_key in self.faces_index:
+            #     # Set to None to avoid index issues
+            #     self.faces[self.faces_index[face_vertices_key]] = None
+            #     continue
+            # self.faces_index[face_vertices_key] = len(self.faces)
+
+            self.faces.append(face_vertices)
+
+def add_layer_to_model(model_document, layer, paint_color):
     object_id = str(uuid.uuid4())
 
     # Make sure the required nodes are present
@@ -102,24 +124,25 @@ def add_layer(model_document, layer):
     build_element.appendChild(item_element)
 
     vertice_index = 0
-    for pixel in layer:
-        vertices, triangles = pixel
+    for face in layer.faces:
+        # if face is None:
+        #     continue
 
-        for vertex in vertices:
+        for vertex in face:
             vertice = model_document.createElement("vertex")
             vertice.setAttribute("x", str(vertex[0]))
             vertice.setAttribute("y", str(vertex[1]))
             vertice.setAttribute("z", str(vertex[2]))
             vertices_element.appendChild(vertice)
 
-        for triangle in triangles:
-            triangle_element = model_document.createElement("triangle")
-            triangle_element.setAttribute("v1", str(vertice_index + triangle[0]))
-            triangle_element.setAttribute("v2", str(vertice_index + triangle[1]))
-            triangle_element.setAttribute("v3", str(vertice_index + triangle[2]))
-            triangles_element.appendChild(triangle_element)
+        triangle_element = model_document.createElement("triangle")
+        triangle_element.setAttribute("v1", str(vertice_index + 0))
+        triangle_element.setAttribute("v2", str(vertice_index + 1))
+        triangle_element.setAttribute("v3", str(vertice_index + 2))
+        triangle_element.setAttribute("paint_color", paint_color)
+        triangles_element.appendChild(triangle_element)
 
-        vertice_index += 8
+        vertice_index += len(face)
 
 def create_model_document():
     model_document = getDOMImplementation().createDocument(None, "model", None)
@@ -162,7 +185,7 @@ with Image.open(INPUT_IMAGE_PATH) as image:
     )
     quantized_image_data = quantized_image.load()
 
-    cohesion_layer = []
+    cohesion_layer = Layer(z=0, thickness=COHESION_LAYER_HEIGHT, scale=SCALE)
     color_layers = {}
 
     model_document = create_model_document()
@@ -174,30 +197,24 @@ with Image.open(INPUT_IMAGE_PATH) as image:
                 continue
 
             # Add cohesion layer (ie, a tall pixel under each colored pixel to serve as a platform)
-            cohesion_layer.append(
-                put_pixel(x=x, y=y, z=0, thickness=COHESION_LAYER_HEIGHT)
-            )
+            cohesion_layer.put_pixel(x=x, y=y)
 
             for index, color in enumerate(colors_configuration.keys()):
                 if quantized_image_data[x, y] != index:
                     continue
 
-                pixel = put_pixel(
-                    x=x,
-                    y=y,
-                    z=COHESION_LAYER_HEIGHT, # On top of the cohesion layer
-                    thickness=COLOR_LAYER_HEIGHT
-                )
+                color_layers.setdefault(color, Layer(z=COHESION_LAYER_HEIGHT, thickness=COLOR_LAYER_HEIGHT, scale=SCALE))
+                color_layers[color].put_pixel(x=x, y=y)
 
-                color_layers.setdefault(color, [])
-                color_layers[color].append(pixel)
-
-    add_layer(model_document, cohesion_layer)
+    add_layer_to_model(model_document, cohesion_layer, "1")
 
     for color, layer in color_layers.items():
-        add_layer(model_document, layer)
+        add_layer_to_model(model_document, layer, "2")
 
-    with ZipFile('output.3mf', 'w') as output_zip:
+    now = datetime.now().strftime("%m%d%Y%H%M%S")
+    output_file_path = f"output-{now}.3mf"
+
+    with ZipFile(output_file_path, 'w') as output_zip:
         output_zip.writestr('[Content_Types].xml', '''<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
     <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
