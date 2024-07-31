@@ -37,7 +37,10 @@ class Layer:
         self.z = z
         self.thickness = thickness
         self.scale = scale
+
         self.triangles = []
+        self.vertices = {}
+
         self.grid = [[False for _ in range(size[1])] for _ in range(size[0])]
 
     def vertices_for(self, x, y):
@@ -57,28 +60,27 @@ class Layer:
         ]
 
         return vertices
-
+    
     def put_pixel(self, x, y):
-        # Define the 12 triangles composing the pixel
+        self.grid[x][y] = True
+
+    def put_floor_and_ceiling(self, x, y):
         triangles = [
-            [0, 3, 1], # Bottom
-            [1, 3, 2], # Bottom
-            [4, 5, 6], # Top
-            [4, 6, 7], # Top
-            # [0, 4, 7],
-            # [0, 7, 3],
-            # [5, 1, 2],
-            # [5, 2, 6],
-            # [2, 3, 6],
-            # [3, 7, 6],
-            # [0, 1, 5],
-            # [0, 5, 4]
+            # Floor
+            [3, 0, 1], 
+            [1, 2, 3],
+
+            # Ceiling
+            [4, 5, 6],
+            [4, 6, 7]
         ]
+
         for triangle in triangles:
             self.put_triangle(triangle=triangle, x=x, y=y)
-            self.grid[x][y] = True
 
     def put_wall(self, x, y, direction):
+
+        triangles = []
 
         if direction == "left":
             triangles = [
@@ -107,17 +109,34 @@ class Layer:
     def put_triangle(self, x, y, triangle):
         vertices = self.vertices_for(x, y)
 
-        face_vertices = [vertices[vertex_index] for vertex_index in triangle]
-        face_vertices.sort()
+        global_vertex_indices = []
 
-        self.triangles.append(face_vertices)
+        triangle.sort()
+        for vertex_index in triangle:
+            vertex = vertices[vertex_index]
+            global_vertex_indices.append(self.find_or_create_vertex(vertex))
 
-    def close_walls(self):
+        self.triangles.append(global_vertex_indices)
+
+    def find_or_create_vertex(self, vertex):
+        rounded_vertex = tuple(map(lambda x: round(x, 4), vertex))
+        vertex_key = 'x'.join(map(str, rounded_vertex))
+
+        if vertex_key in self.vertices:
+            return self.vertices[vertex_key]
+        else:
+            vertex_index = len(self.vertices)
+            self.vertices[vertex_key] = vertex_index
+            return vertex_index
+
+    def build_geometry(self):
         # For now we only have a top and bottom faces, we must add some walls
         for x in range(len(self.grid)):
             for y in range(len(self.grid[x])):
                 if not self.grid[x][y]:
                     continue
+
+                self.put_floor_and_ceiling(x=x, y=y)
 
                 # Check if we need to add a wall on the left
                 if x == 0 or not self.grid[x - 1][y]:
@@ -129,14 +148,14 @@ class Layer:
 
                 # Check if we need to add a wall on the top
                 if y == 0 or not self.grid[x][y - 1]:
-                    self.put_wall(x=x, y=y, direction="top")
+                    self.put_wall(x=x, y=y, direction="bottom")
 
                 # Check if we need to add a wall on the bottom
                 if y == len(self.grid[x]) - 1 or not self.grid[x][y + 1]:
-                    self.put_wall(x=x, y=y, direction="bottom")
+                    self.put_wall(x=x, y=y, direction="top")
 
 def add_layer_to_model(model_document, layer, paint_color):
-    layer.close_walls()
+    layer.build_geometry()
 
     object_id = str(uuid.uuid4())
 
@@ -173,23 +192,24 @@ def add_layer_to_model(model_document, layer, paint_color):
     item_element.setAttribute("printable", "1")
     build_element.appendChild(item_element)
 
-    vertice_index = 0
+    for vertex in layer.vertices.keys():
+        x, y, z = vertex.split('x')
+
+        vertice = model_document.createElement("vertex")
+        vertice.setAttribute("x", x)
+        vertice.setAttribute("y", y)
+        vertice.setAttribute("z", z)
+        vertices_element.appendChild(vertice)
+
     for face in layer.triangles:
-        for vertex in face:
-            vertice = model_document.createElement("vertex")
-            vertice.setAttribute("x", str(vertex[0]))
-            vertice.setAttribute("y", str(vertex[1]))
-            vertice.setAttribute("z", str(vertex[2]))
-            vertices_element.appendChild(vertice)
+        v1_index, v2_index, v3_index = face
 
         triangle_element = model_document.createElement("triangle")
-        triangle_element.setAttribute("v1", str(vertice_index + 0))
-        triangle_element.setAttribute("v2", str(vertice_index + 1))
-        triangle_element.setAttribute("v3", str(vertice_index + 2))
-        triangle_element.setAttribute("paint_color", paint_color)
+        triangle_element.setAttribute("v1", str(v1_index))
+        triangle_element.setAttribute("v2", str(v2_index))
+        triangle_element.setAttribute("v3", str(v3_index))
+        # triangle_element.setAttribute("paint_color", paint_color)
         triangles_element.appendChild(triangle_element)
-
-        vertice_index += len(face)
 
 def create_model_document():
     model_document = getDOMImplementation().createDocument(None, "model", None)
