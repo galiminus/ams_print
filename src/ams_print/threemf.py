@@ -5,7 +5,7 @@ class ThreeMF:
     def __init__(self):
         self.model_document = self._create_model_document()
 
-    def _create_model_document():
+    def _create_model_document(self):
         document = getDOMImplementation().createDocument(None, "model", None)
 
         document.documentElement.setAttribute("unit", "millimeter")
@@ -79,9 +79,9 @@ class ThreeMF:
     <Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>
 </Types>''')
 
-        output_zip.writestr('_rels/.rels', '''<?xml version="1.0" encoding="UTF-8"?>
-<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-    <Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
-</Relationships>''')
+            output_zip.writestr('_rels/.rels', '''<?xml version="1.0" encoding="UTF-8"?>
+    <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+        <Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+    </Relationships>''')
 
-        output_zip.writestr('3D/3dmodel.model', self.model_document.toprettyxml(encoding="utf-8"))
+            output_zip.writestr('3D/3dmodel.model', self.model_document.toprettyxml(encoding="utf-8"))
