@@ -1,2 +1,9 @@
+[project]
+name = "ams_print"
+dependencies = [
+  "Pillow==9.4.0",
+  "type==0.12.3"
+]
+
 [project.scripts]
 ams_print = "ams_print.cli:app"
