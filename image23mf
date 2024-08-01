@@ -67,12 +67,12 @@ class Layer:
     def put_floor_and_ceiling(self, x, y):
         triangles = [
             # Floor
-            [3, 0, 1], 
-            [1, 2, 3],
+            [3, 1, 0],
+            [3, 2, 1],
 
             # Ceiling
             [4, 5, 6],
-            [4, 6, 7]
+            [4, 6, 7],
         ]
 
         for triangle in triangles:
@@ -84,23 +84,25 @@ class Layer:
 
         if direction == "left":
             triangles = [
-                [0, 3, 7],
-                [0, 7, 4]
+
+                [7, 3, 0],
+                [4, 7, 0]
             ]
         elif direction == "right":
             triangles = [
-                [1, 5, 6],
-                [1, 6, 2]
+                [6, 5, 1],
+                [6, 1, 2]
+
             ]
         elif direction == "top":
             triangles = [
-                [2, 6, 7],
-                [2, 7, 3]
+                [7, 6, 2],
+                [3, 7, 2]
             ]
         elif direction == "bottom":
             triangles = [
-                [0, 4, 5],
-                [0, 5, 1]
+                [0, 5, 4],
+                [1, 5, 0]
             ]
         
         for triangle in triangles:
@@ -111,7 +113,6 @@ class Layer:
 
         global_vertex_indices = []
 
-        triangle.sort()
         for vertex_index in triangle:
             vertex = vertices[vertex_index]
             global_vertex_indices.append(self.find_or_create_vertex(vertex))
@@ -146,48 +147,46 @@ class Layer:
                 if x == len(self.grid) - 1 or not self.grid[x + 1][y]:
                     self.put_wall(x=x, y=y, direction="right")
 
-                # Check if we need to add a wall on the top
+                # Check if we need to add a wall on the bottom
                 if y == 0 or not self.grid[x][y - 1]:
                     self.put_wall(x=x, y=y, direction="bottom")
 
-                # Check if we need to add a wall on the bottom
+                # Check if we need to add a wall on the top
                 if y == len(self.grid[x]) - 1 or not self.grid[x][y + 1]:
                     self.put_wall(x=x, y=y, direction="top")
 
-def add_layer_to_model(model_document, layer, paint_color):
+def add_layer_to_model(document, layer, id, paint_color):
     layer.build_geometry()
-
-    object_id = str(uuid.uuid4())
 
     # Make sure the required nodes are present
     try:
-        resources_element = model_document.getElementsByTagName("resources")[0]
+        resources_element = document.getElementsByTagName("resources")[0]
     except IndexError:
-        resources_element = model_document.createElement("resources")
-        model_document.documentElement.appendChild(resources_element)
+        resources_element = document.createElement("resources")
+        document.documentElement.appendChild(resources_element)
 
     try:
-        build_element = model_document.getElementsByTagName("build")[0]
+        build_element = document.getElementsByTagName("build")[0]
     except IndexError:
-        build_element = model_document.createElement("build")
-        model_document.documentElement.appendChild(build_element)
+        build_element = document.createElement("build")
+        document.documentElement.appendChild(build_element)
 
-    object_element = model_document.createElement("object")
-    object_element.setAttribute("id", object_id)
+    object_element = document.createElement("object")
+    object_element.setAttribute("id", id)
     object_element.setAttribute("type", "model")
     resources_element.appendChild(object_element)
 
-    mesh_element = model_document.createElement("mesh")
+    mesh_element = document.createElement("mesh")
     object_element.appendChild(mesh_element)
 
-    vertices_element = model_document.createElement("vertices")
+    vertices_element = document.createElement("vertices")
     mesh_element.appendChild(vertices_element)
 
-    triangles_element = model_document.createElement("triangles")
+    triangles_element = document.createElement("triangles")
     mesh_element.appendChild(triangles_element)
 
-    item_element = model_document.createElement("item")
-    item_element.setAttribute("objectid", object_id)
+    item_element = document.createElement("item")
+    item_element.setAttribute("objectid", id)
     item_element.setAttribute("transform", "1 0 0 0 1 0 0 0 1 90 90 0")
     item_element.setAttribute("printable", "1")
     build_element.appendChild(item_element)
@@ -195,7 +194,7 @@ def add_layer_to_model(model_document, layer, paint_color):
     for vertex in layer.vertices.keys():
         x, y, z = vertex.split('x')
 
-        vertice = model_document.createElement("vertex")
+        vertice = document.createElement("vertex")
         vertice.setAttribute("x", x)
         vertice.setAttribute("y", y)
         vertice.setAttribute("z", z)
@@ -204,7 +203,7 @@ def add_layer_to_model(model_document, layer, paint_color):
     for face in layer.triangles:
         v1_index, v2_index, v3_index = face
 
-        triangle_element = model_document.createElement("triangle")
+        triangle_element = document.createElement("triangle")
         triangle_element.setAttribute("v1", str(v1_index))
         triangle_element.setAttribute("v2", str(v2_index))
         triangle_element.setAttribute("v3", str(v3_index))
@@ -277,10 +276,10 @@ with Image.open(INPUT_IMAGE_PATH) as image:
                 )
                 color_layers[color].put_pixel(x=x, y=y)
 
-    add_layer_to_model(model_document, cohesion_layer, "1")
+    add_layer_to_model(document=model_document, layer=cohesion_layer, id="1", paint_color="1")
 
-    for color, layer in color_layers.items():
-        add_layer_to_model(model_document, layer, "2")
+    # for index, (color, layer) in enumerate(color_layers.items()):
+    #     add_layer_to_model(document=model_document, layer=layer, id=str(index + 2), paint_color="2")
 
     now = datetime.now().strftime("%m%d%Y%H%M%S")
     output_file_path = f"output-{now}.3mf"
@@ -297,4 +296,4 @@ with Image.open(INPUT_IMAGE_PATH) as image:
     <Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
 </Relationships>''')
 
-        output_zip.writestr('3D/3dmodel.model', model_document.toprettyxml())
+        output_zip.writestr('3D/3dmodel.model', model_document.toprettyxml(encoding="utf-8"))
