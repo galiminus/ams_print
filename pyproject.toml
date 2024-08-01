@@ -1,0 +1,2 @@
+[project.scripts]
+ams_print = "ams_print.cli:app"

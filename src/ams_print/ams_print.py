@@ -6,27 +6,12 @@ from typing_extensions import Annotated
 from .layer import Layer
 from .threemf import ThreeMF
 
-## Configuration
-
 DEFAULT_SIZE = 70 # mm
 DEFAULT_HOLE_SIZE = 0.8 # mm
-DEFAULT_HOLE_DENSITY_PERCENT = 100 # %
+DEFAULT_HOLE_DENSITY_PERCENT = 40 # %
 
 DEFAULT_COHESION_LAYER_HEIGHT = 1
 DEFAULT_COLOR_LAYER_HEIGHT = 0.6
-
-DITHER = False
-
-## End configuration
-
-# HOLE_DENSITY = HOLE_DENSITY_PERCENT * 0.4 / 100
-
-# RESOLUTION = int(SIZE / HOLE_SIZE)
-# HOLE_COUNT = int(RESOLUTION * HOLE_DENSITY)
-# SCALE = SIZE / RESOLUTION
-
-# HOLE_FREQUENCY = round((RESOLUTION - HOLE_SIZE * SCALE * HOLE_COUNT) / HOLE_COUNT)
-# HOLE_OFFSET = int(HOLE_FREQUENCY / 2)
 
 COLOR_CONFIGURATIONS = {
     "black":    [ 0, 0, 0],
@@ -42,9 +27,9 @@ def ams_print(
     hole_density_percent: Annotated[int, "Density of the holes as a percentage"] = DEFAULT_HOLE_DENSITY_PERCENT,
     cohesion_layer_height: Annotated[float, "Height of the cohesion layer in mm"] = DEFAULT_COHESION_LAYER_HEIGHT,
     color_layer_height: Annotated[float, "Height of the color layers in mm"] = DEFAULT_COLOR_LAYER_HEIGHT,
-    dither: Annotated[bool, "Whether to use dithering"] = DITHER
+    dither: Annotated[bool, "Whether to use dithering"] = False
 ):
-    hole_density = hole_density_percent * 0.4 / 100
+    hole_density = hole_density_percent / 100
 
     resolution = int(size / hole_size)
     hole_count = int(resolution * hole_density)
@@ -74,7 +59,7 @@ def ams_print(
         image_palette.putpalette(palette)
 
         quantized_image = resized_image.quantize(
-            dither=Image.Dither.FLOYDSTEINBERG if DITHER else Image.Dither.NONE,
+            dither=Image.Dither.FLOYDSTEINBERG if dither else Image.Dither.NONE,
             palette=image_palette
         )
         quantized_image_data = quantized_image.load()
@@ -105,9 +90,9 @@ def ams_print(
 
         three_mf = ThreeMF()
 
-        three_mf.add_object(object=cohesion_layer, id="1", paint_color="1")
+        three_mf.add_object(object=cohesion_layer, paint_color="1")
 
-        # for index, (color, layer) in enumerate(color_layers.items()):
-        #     add_layer_to_model(document=model_document, layer=layer, id=str(index + 2), paint_color="2")
+        for index, (color, layer) in enumerate(color_layers.items()):
+            three_mf.add_object(object=layer, paint_color="2")
 
         three_mf.save(path=output)

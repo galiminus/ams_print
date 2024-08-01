@@ -4,6 +4,7 @@ from zipfile import ZipFile
 class ThreeMF:
     def __init__(self):
         self.model_document = self._create_model_document()
+        self.object_id = 1
 
     def _create_model_document(self):
         document = getDOMImplementation().createDocument(None, "model", None)
@@ -14,7 +15,7 @@ class ThreeMF:
 
         return document
 
-    def add_object(self, object, id, paint_color):
+    def add_object(self, object, paint_color):
         document = self.model_document
 
         object.build_geometry()
@@ -33,7 +34,7 @@ class ThreeMF:
             document.documentElement.appendChild(build_element)
 
         object_element = document.createElement("object")
-        object_element.setAttribute("id", id)
+        object_element.setAttribute("id", str(self.object_id))
         object_element.setAttribute("type", "model")
         resources_element.appendChild(object_element)
 
@@ -47,7 +48,7 @@ class ThreeMF:
         mesh_element.appendChild(triangles_element)
 
         item_element = document.createElement("item")
-        item_element.setAttribute("objectid", id)
+        item_element.setAttribute("objectid", str(self.object_id))
         item_element.setAttribute("transform", "1 0 0 0 1 0 0 0 1 90 90 0")
         item_element.setAttribute("printable", "1")
         build_element.appendChild(item_element)
@@ -71,7 +72,10 @@ class ThreeMF:
             # triangle_element.setAttribute("paint_color", paint_color)
             triangles_element.appendChild(triangle_element)
     
+        self.object_id += 1
+    
     def save(self, path):
+        # Remove file if it already exists
         with ZipFile(path, 'w') as output_zip:
             output_zip.writestr('[Content_Types].xml', '''<?xml version="1.0" encoding="UTF-8"?>
 <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
