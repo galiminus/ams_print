@@ -3,3 +3,5 @@
 *.stl
 *.3mf
 __pycache__/
+build/
+*.egg-info/

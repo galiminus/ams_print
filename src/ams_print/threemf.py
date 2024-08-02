@@ -4,6 +4,8 @@ from zipfile import ZipFile
 class ThreeMF:
     def __init__(self):
         self.model_document = self._create_model_document()
+        self.settings_document = self._create_model_settings_document()
+
         self.object_id = 1
 
     def _create_model_document(self):
@@ -14,11 +16,35 @@ class ThreeMF:
         document.documentElement.setAttribute("xmlns", "http://schemas.microsoft.com/3dmanufacturing/core/2015/02")
 
         return document
+    
+    def _create_model_settings_document(self):
+        document = getDOMImplementation().createDocument(None, "config", None)
 
-    def add_object(self, object, paint_color):
-        document = self.model_document
+        return document
 
+    def add_object(self, object, name, paint_color):
         object.build_geometry()
+
+        self.add_object_to_model_document(object, paint_color)
+        self.add_object_to_model_settings_document(object, name)
+
+        self.object_id += 1
+
+    def add_object_to_model_settings_document(self, object, name):
+        document = self.settings_document
+
+        metadata_element = document.createElement("metadata")
+        metadata_element.setAttribute("key", "name")
+        metadata_element.setAttribute("value", name)
+
+        item_element = document.createElement("object")
+        item_element.setAttribute("id", str(self.object_id))
+        item_element.appendChild(metadata_element)
+
+        document.documentElement.appendChild(item_element)
+
+    def add_object_to_model_document(self, object, paint_color):
+        document = self.model_document
 
         # Make sure the required nodes are present
         try:
@@ -71,9 +97,7 @@ class ThreeMF:
             triangle_element.setAttribute("v3", str(v3_index))
             # triangle_element.setAttribute("paint_color", paint_color)
             triangles_element.appendChild(triangle_element)
-    
-        self.object_id += 1
-    
+        
     def save(self, path):
         # Remove file if it already exists
         with ZipFile(path, 'w') as output_zip:
@@ -84,8 +108,9 @@ class ThreeMF:
 </Types>''')
 
             output_zip.writestr('_rels/.rels', '''<?xml version="1.0" encoding="UTF-8"?>
-    <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-        <Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
-    </Relationships>''')
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+    <Relationship Target="/3D/3dmodel.model" Id="rel-1" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>
+</Relationships>''')
 
             output_zip.writestr('3D/3dmodel.model', self.model_document.toprettyxml(encoding="utf-8"))
+            output_zip.writestr('Metadata/model_settings.config', self.settings_document.toprettyxml(encoding="utf-8"))
