@@ -98,9 +98,7 @@ class ThreeMF:
             triangle_element.setAttribute("v1", str(v1_index))
             triangle_element.setAttribute("v2", str(v2_index))
             triangle_element.setAttribute("v3", str(v3_index))
-
-            if paint_color is not None:
-                triangle_element.setAttribute("paint_color", COLOR_CODES[self.object_id - 1])
+            triangle_element.setAttribute("paint_color", COLOR_CODES[self.object_id - 1])
             triangles_element.appendChild(triangle_element)
         
     def save(self, path):

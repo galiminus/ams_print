@@ -7,8 +7,8 @@ from .layer import Layer
 from .threemf import ThreeMF
 
 DEFAULT_SIZE = 70 # mm
-DEFAULT_HOLE_SIZE = 0.8 # mm
-DEFAULT_HOLE_DENSITY_PERCENT = 40 # %
+DEFAULT_GRID_HOLES_SIZE = 0.8 # mm
+DEFAULT_GRID_DENSITY_PERCENT = 40 # %
 
 DEFAULT_COHESION_LAYER_HEIGHT = 1
 DEFAULT_COLOR_LAYER_HEIGHT = 0.6
@@ -23,19 +23,20 @@ def ams_print(
     input: Annotated[str, "Path to the image to print"],
     output: Annotated[str, "Path to the output 3MF file"],
     size: Annotated[int, "Size of the print in mm"] = DEFAULT_SIZE,
-    hole_size: Annotated[float, "Size of the holes in mm"] = DEFAULT_HOLE_SIZE,
-    hole_density_percent: Annotated[int, "Density of the holes as a percentage"] = DEFAULT_HOLE_DENSITY_PERCENT,
+    grid: Annotated[bool, "Whether to add holes"] = False,
+    grid_holes_size: Annotated[float, "Size of the holes in mm"] = DEFAULT_GRID_HOLES_SIZE,
+    grid_density_percent: Annotated[int, "Density of the holes as a percentage"] = DEFAULT_GRID_DENSITY_PERCENT,
     cohesion_layer_height: Annotated[float, "Height of the cohesion layer in mm"] = DEFAULT_COHESION_LAYER_HEIGHT,
     color_layer_height: Annotated[float, "Height of the color layers in mm"] = DEFAULT_COLOR_LAYER_HEIGHT,
     dither: Annotated[bool, "Whether to use dithering"] = False
 ):
-    hole_density = hole_density_percent / 100
+    hole_density = grid_density_percent / 100
 
-    resolution = int(size / hole_size)
+    resolution = int(size / grid_holes_size)
     hole_count = int(resolution * hole_density)
     scale = size / resolution
 
-    hole_frequency = round((resolution - hole_size * scale * hole_count) / hole_count)
+    hole_frequency = round((resolution - grid_holes_size * scale * hole_count) / hole_count)
     hole_offset = int(hole_frequency / 2)
 
     flat_colors = []
@@ -70,9 +71,9 @@ def ams_print(
 
         for x in range(quantized_image.size[0]):
             for y in range(quantized_image.size[1]):
-                # Skip holes
+                # Skip holes in the grid (ie, empty pixels) if grid is enabled
                 is_hole = (x + hole_offset) % hole_frequency == 0 and (y + hole_offset) % hole_frequency == 0
-                if is_hole:
+                if grid and is_hole:
                     continue
 
                 # Add cohesion layer (ie, a tall pixel under each colored pixel to serve as a platform)
@@ -93,6 +94,6 @@ def ams_print(
         three_mf.add_object(object=cohesion_layer, name="cohesion layer")
 
         for index, (color, layer) in enumerate(color_layers.items()):
-            three_mf.add_object(object=layer, name=f"{color} layer", paint_color="0C")
+            three_mf.add_object(object=layer, name=f"{color} layer")
 
         three_mf.save(path=output)
