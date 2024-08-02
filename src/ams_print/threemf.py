@@ -1,5 +1,8 @@
 from xml.dom.minidom import getDOMImplementation
 from zipfile import ZipFile
+import random
+
+COLOR_CODES =  ['4', '8', '0C', '1C', '2C', '3C', '4C', '5C', '6C', '7C', '8C', '9C', 'AC', 'BC', 'CC', 'DC']
 
 class ThreeMF:
     def __init__(self):
@@ -22,15 +25,15 @@ class ThreeMF:
 
         return document
 
-    def add_object(self, object, name, paint_color):
+    def add_object(self, object, name):
         object.build_geometry()
 
-        self.add_object_to_model_document(object, paint_color)
-        self.add_object_to_model_settings_document(object, name)
+        self.add_object_to_model_document(object)
+        self.add_object_to_model_settings_document(name)
 
         self.object_id += 1
 
-    def add_object_to_model_settings_document(self, object, name):
+    def add_object_to_model_settings_document(self, name):
         document = self.settings_document
 
         metadata_element = document.createElement("metadata")
@@ -43,7 +46,7 @@ class ThreeMF:
 
         document.documentElement.appendChild(item_element)
 
-    def add_object_to_model_document(self, object, paint_color):
+    def add_object_to_model_document(self, object):
         document = self.model_document
 
         # Make sure the required nodes are present
@@ -95,7 +98,9 @@ class ThreeMF:
             triangle_element.setAttribute("v1", str(v1_index))
             triangle_element.setAttribute("v2", str(v2_index))
             triangle_element.setAttribute("v3", str(v3_index))
-            # triangle_element.setAttribute("paint_color", paint_color)
+
+            if paint_color is not None:
+                triangle_element.setAttribute("paint_color", COLOR_CODES[self.object_id - 1])
             triangles_element.appendChild(triangle_element)
         
     def save(self, path):

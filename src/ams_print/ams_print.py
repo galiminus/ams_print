@@ -90,9 +90,9 @@ def ams_print(
 
         three_mf = ThreeMF()
 
-        three_mf.add_object(object=cohesion_layer, name="cohesion layer", paint_color="1")
+        three_mf.add_object(object=cohesion_layer, name="cohesion layer")
 
         for index, (color, layer) in enumerate(color_layers.items()):
-            three_mf.add_object(object=layer, name=f"{color} layer", paint_color="2")
+            three_mf.add_object(object=layer, name=f"{color} layer", paint_color="0C")
 
         three_mf.save(path=output)
