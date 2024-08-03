@@ -6,7 +6,7 @@ from .threemf import ThreeMF
 
 DEFAULT_SIZE = 70 # mm
 DEFAULT_PIXEL_SIZE = 0.8 # mm
-DEFAULT_GRID_DENSITY_PERCENT = 40 # %
+DEFAULT_GRID_DENSITY = 0.4
 
 DEFAULT_COHESION_LAYER_HEIGHT = 1
 DEFAULT_COLOR_LAYER_HEIGHT = 0.6
@@ -18,8 +18,7 @@ def ams_print(
     size: Annotated[int, "Size of the print in mm"] = DEFAULT_SIZE,
     pixel_size: Annotated[float, "Size of the pixels in mm"] = DEFAULT_PIXEL_SIZE,
 
-    grid: Annotated[bool, "Whether to add holes"] = False,
-    grid_density_percent: Annotated[int, "Density of the holes as a percentage"] = DEFAULT_GRID_DENSITY_PERCENT,
+    grid_density: Annotated[float, "Density of the holes between 0 and 1"] = DEFAULT_GRID_DENSITY,
 
     cohesion_layer_height: Annotated[float, "Height of the cohesion layer in mm"] = DEFAULT_COHESION_LAYER_HEIGHT,
     color_layer_height: Annotated[float, "Height of the color layers in mm"] = DEFAULT_COLOR_LAYER_HEIGHT,
@@ -29,14 +28,16 @@ def ams_print(
     dither: Annotated[bool, "Whether to dither the image"] = False,
     colors: Annotated[int, "Number of colors to use in the image quantization"] = 4,
 ):
-    hole_density = grid_density_percent / 100
-
     resolution = int(size / pixel_size)
-    hole_count = int(resolution * hole_density)
+    hole_count = int(resolution * grid_density)
     scale = size / resolution
 
-    hole_frequency = round((resolution - pixel_size * scale * hole_count) / hole_count)
-    hole_offset = int(hole_frequency / 2)
+    if hole_count == 0:
+        hole_frequency = 0
+        hole_offset = 0
+    else:
+        hole_frequency = round((resolution - pixel_size * scale * hole_count) / hole_count)
+        hole_offset = int(hole_frequency / 2)
 
     with Image.open(input) as image:
         if image.mode != "P":
@@ -68,8 +69,7 @@ def ams_print(
         for x in range(resized_image.size[0]):
             for y in range(resized_image.size[1]):
                 # Skip holes in the grid (ie, empty pixels) if grid is enabled
-                is_hole = (x + hole_offset) % hole_frequency == 0 and (y + hole_offset) % hole_frequency == 0
-                if grid and is_hole:
+                if hole_count > 0 and (x + hole_offset) % hole_frequency == 0 and (y + hole_offset) % hole_frequency == 0:
                     continue
 
                 # Add cohesion layer (ie, a tall pixel under each colored pixel to serve as a platform)
