@@ -6,19 +6,19 @@ class Layer:
         self.grid = [[False for _ in range(size[1])] for _ in range(size[0])]
 
     def vertices_for(self, x, y, z, thickness, scale):
-        # Define the 8 vertices of the pixel
-        scaled_x = x * scale
-        scaled_y = y * scale
+        scaled_x = x * scale[0]
+        scaled_y = y * scale[1]
 
+        # Define the 8 vertices of the pixel
         vertices = [
-            [  scaled_x,          scaled_y,           z              ],
-            [  scaled_x + scale,  scaled_y,           z              ],
-            [  scaled_x + scale,  scaled_y + scale,   z              ],
-            [  scaled_x,          scaled_y + scale,   z              ],
-            [  scaled_x,          scaled_y,           z + thickness  ],
-            [  scaled_x + scale,  scaled_y,           z + thickness  ],
-            [  scaled_x + scale,  scaled_y + scale,   z + thickness  ],
-            [  scaled_x,          scaled_y + scale,   z + thickness  ]
+            [  scaled_x,             scaled_y,              z              ],
+            [  scaled_x + scale[0],  scaled_y,              z              ],
+            [  scaled_x + scale[0],  scaled_y + scale[1],   z              ],
+            [  scaled_x,             scaled_y + scale[1],   z              ],
+            [  scaled_x,             scaled_y,              z + thickness  ],
+            [  scaled_x + scale[0],  scaled_y,              z + thickness  ],
+            [  scaled_x + scale[0],  scaled_y + scale[1],   z + thickness  ],
+            [  scaled_x,             scaled_y + scale[1],   z + thickness  ]
         ]
 
         return vertices

@@ -1,6 +1,9 @@
 from PIL import Image
 from typing_extensions import Annotated
 
+from typing import Tuple
+import typer
+
 from .layer import Layer
 from .threemf import ThreeMF
 
@@ -15,7 +18,7 @@ def ams_print(
     input: Annotated[str, "Path to the image to print"],
     output: Annotated[str, "Path to the output 3MF file"],
 
-    size: Annotated[int, "Size of the print in mm"] = DEFAULT_SIZE,
+    size: Annotated[Tuple[int, int], typer.Option()] = (DEFAULT_SIZE, DEFAULT_SIZE),
     pixel_size: Annotated[float, "Size of the pixels in mm"] = DEFAULT_PIXEL_SIZE,
 
     grid_density: Annotated[float, "Density of the holes between 0 and 1"] = DEFAULT_GRID_DENSITY,
@@ -28,16 +31,37 @@ def ams_print(
     dither: Annotated[bool, "Whether to dither the image"] = False,
     colors: Annotated[int, "Number of colors to use in the image quantization"] = 4,
 ):
-    resolution = int(size / pixel_size)
-    hole_count = int(resolution * grid_density)
-    scale = size / resolution
+    resolution = (
+        int(size[0] / pixel_size),
+        int(size[1] / pixel_size)
+    )
 
-    if hole_count == 0:
-        hole_frequency = 0
-        hole_offset = 0
-    else:
-        hole_frequency = round((resolution - pixel_size * scale * hole_count) / hole_count)
-        hole_offset = int(hole_frequency / 2)
+    # If resolution isn't odd, we need to adjust the resolution to make it odd
+    if resolution[0] % 2 == 0:
+        resolution = (resolution[0] + 1, resolution[1])
+
+    if resolution[1] % 2 == 0:
+        resolution = (resolution[0], resolution[1] + 1)
+
+    hole_count = (
+        int(resolution[0] * grid_density),
+        int(resolution[1] * grid_density)
+    )
+
+    scale = (
+        size[0] / resolution[0],
+        size[1] / resolution[1]
+    )
+
+    hole_frequency = (
+        round((resolution[0] - pixel_size * scale[0] * hole_count[0]) / hole_count[0]) if hole_count[0] > 0 else 0,
+        round((resolution[1] - pixel_size * scale[1] * hole_count[1]) / hole_count[1]) if hole_count[0] > 0 else 0
+    )
+
+    hole_offset = (
+        int(hole_frequency[0] / 2),
+        int(hole_frequency[1] / 2)
+    )
 
     with Image.open(input) as image:
         if image.mode != "P":
@@ -49,7 +73,7 @@ def ams_print(
             )
 
         print(resolution)
-        resized_image = image.resize((resolution, resolution), Image.LANCZOS)
+        resized_image = image.resize((resolution[0], resolution[1]), Image.LANCZOS)
         resized_image_data = resized_image.load()
 
         palette = resized_image.getpalette()
@@ -69,7 +93,10 @@ def ams_print(
         for x in range(resized_image.size[0]):
             for y in range(resized_image.size[1]):
                 # Skip holes in the grid (ie, empty pixels) if grid is enabled
-                if hole_count > 0 and (x + hole_offset) % hole_frequency == 0 and (y + hole_offset) % hole_frequency == 0:
+                x_hole_match = (hole_count[0] > 0 and (x + hole_offset[0]) % hole_frequency[0] == 0)
+                y_hole_match = (hole_count[1] > 0 and (y + hole_offset[1]) % hole_frequency[1] == 0)
+
+                if x_hole_match and y_hole_match:
                     continue
 
                 # Add cohesion layer (ie, a tall pixel under each colored pixel to serve as a platform)
