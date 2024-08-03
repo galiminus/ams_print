@@ -1,13 +1,11 @@
-#!/usr/bin/env python
-
-from PIL import Image, ImagePalette
+from PIL import Image
 from typing_extensions import Annotated
 
 from .layer import Layer
 from .threemf import ThreeMF
 
 DEFAULT_SIZE = 70 # mm
-DEFAULT_GRID_HOLES_SIZE = 0.8 # mm
+DEFAULT_PIXEL_SIZE = 0.8 # mm
 DEFAULT_GRID_DENSITY_PERCENT = 40 # %
 
 DEFAULT_COHESION_LAYER_HEIGHT = 1
@@ -18,9 +16,9 @@ def ams_print(
     output: Annotated[str, "Path to the output 3MF file"],
 
     size: Annotated[int, "Size of the print in mm"] = DEFAULT_SIZE,
+    pixel_size: Annotated[float, "Size of the pixels in mm"] = DEFAULT_PIXEL_SIZE,
 
     grid: Annotated[bool, "Whether to add holes"] = False,
-    grid_holes_size: Annotated[float, "Size of the holes in mm"] = DEFAULT_GRID_HOLES_SIZE,
     grid_density_percent: Annotated[int, "Density of the holes as a percentage"] = DEFAULT_GRID_DENSITY_PERCENT,
 
     cohesion_layer_height: Annotated[float, "Height of the cohesion layer in mm"] = DEFAULT_COHESION_LAYER_HEIGHT,
@@ -33,11 +31,11 @@ def ams_print(
 ):
     hole_density = grid_density_percent / 100
 
-    resolution = int(size / grid_holes_size)
+    resolution = int(size / pixel_size)
     hole_count = int(resolution * hole_density)
     scale = size / resolution
 
-    hole_frequency = round((resolution - grid_holes_size * scale * hole_count) / hole_count)
+    hole_frequency = round((resolution - pixel_size * scale * hole_count) / hole_count)
     hole_offset = int(hole_frequency / 2)
 
     with Image.open(input) as image:
@@ -49,12 +47,11 @@ def ams_print(
                 dither=Image.Dither.FLOYDSTEINBERG if dither else Image.Dither.NONE
             )
 
+        print(resolution)
         resized_image = image.resize((resolution, resolution), Image.LANCZOS)
-
-        resized_image = resized_image
         resized_image_data = resized_image.load()
 
-        palette = image.getpalette()
+        palette = resized_image.getpalette()
 
         # Compute color configuration from the image palette
         color_mapping = []
@@ -62,28 +59,11 @@ def ams_print(
             color = tuple(palette[index:index + 3])
             color_mapping.append('#%02X%02X%02X' % color)
 
-        cohesion_layer = Layer(
-            z=0,
-            thickness=cohesion_layer_height,
-            scale=scale,
-            size=(resized_image.size[0], resized_image.size[1])
-        )
+        cohesion_layer = Layer(size=(resized_image.size[0], resized_image.size[1]))
 
         color_layers = {}
         for index, color in enumerate(color_mapping):
-            # Start at the top of the cohesion layer
-            z = cohesion_layer_height
-
-            # Add the height of the previous color layers
-            if layered:
-                z += index * color_layer_height
-
-            color_layers[color] = Layer(
-                z=z,
-                thickness=color_layer_height,
-                scale=scale,
-                size=(resized_image.size[0], resized_image.size[1])
-            )
+            color_layers[color] = Layer(size=(resized_image.size[0], resized_image.size[1]))
 
         for x in range(resized_image.size[0]):
             for y in range(resized_image.size[1]):
@@ -93,25 +73,44 @@ def ams_print(
                     continue
 
                 # Add cohesion layer (ie, a tall pixel under each colored pixel to serve as a platform)
-                cohesion_layer.put_pixel(x=x, y=y)
+                cohesion_layer.plot(x=x, y=y)
 
                 for index, color in enumerate(color_mapping):
                     # Since the image is quantized, we can compare the pixel value to the index
                     if resized_image_data[x, y] != index:
                         continue
 
-                    color_layers[color].put_pixel(x=x, y=y)
+                    color_layers[color].plot(x=x, y=y)
 
                     if layered:
                         # We must also add the previous color layers to sit on top of them.
                         for previous_index in range(index):
-                            color_layers[color_mapping[previous_index]].put_pixel(x=x, y=y)
+                            color_layers[color_mapping[previous_index]].plot(x=x, y=y)
 
         three_mf = ThreeMF()
 
-        three_mf.add_object(object=cohesion_layer, name="cohesion layer")
+        three_mf.add_object(
+            object=cohesion_layer,
+            name="cohesion layer",
+            z=0,
+            thickness=cohesion_layer_height,
+            scale=scale
+        )
 
         for index, (color, layer) in enumerate(color_layers.items()):
-            three_mf.add_object(object=layer, name=f"{color} layer")
+            # Start at the top of the cohesion layer
+            z = cohesion_layer_height
+
+            # Add the height of the previous color layers
+            if layered:
+                z += index * color_layer_height
+
+            three_mf.add_object(
+                object=layer,
+                name=f"{color} layer",
+                z=z,
+                thickness=color_layer_height,
+                scale=scale
+            )
 
         three_mf.save(path=output)
